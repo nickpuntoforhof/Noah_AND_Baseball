@@ -11,7 +11,7 @@ library(tidyverse)
 
 # Import data
 season <- read.csv("../data/all_qualified_batter_seasons_fangraphs.csv", stringsAsFactors = FALSE)
-colnames(season)[1] <- "Season"
+colnames(season)[1] <- "Year"
 
 career <- read.csv("../data/career_war_200_PA_min_fangraphs.csv", stringsAsFactors = FALSE)
 colnames(career)[1] <- "Name"
@@ -19,18 +19,43 @@ colnames(career)[1] <- "Name"
 
 ```{r}
 # Create binary variable denoting players with greater than 50 career war
-career <- career %>% select(Name, G, PA, WAR, playerid) %>% mutate(WAR_50_greater = ifelse(WAR >= 50, 1, 0), 
+career <- career %>% select(Name, G, PA, WAR, playerid) %>% mutate(WAR_50_greater = ifelse(WAR >= 50, 1, 0),
+                                                                   WAR_60_greater = ifelse(WAR >= 60, 1, 0),
                             WAR_20_less = ifelse(WAR <= 20, 1, 0))
+colnames(career)[2:4] <- paste0(colnames(career)[2:4], "_career")
+
+# Pick needed variables from season dataset
+season <- season %>% select(Year, Team, G, PA, WAR, playerid)
+
+# Get top 20 player-seasons per year
+top_of_league <- season %>% group_by(Year) %>% group_by(WAR_rank = rank(desc(WAR))) %>% filter(WAR_rank <= 20)
+
+# Merge top_of_league with career to add career WAR information to top_of_league dataset
+top_of_league <- merge(top_of_league, career, by = "playerid", all.x = TRUE)
 ```
 
 
 ```{r}
-getwd()
+# Get metrics per year
+career_metrics_by_year <- top_of_league %>% group_by(Year) %>% summarize(Career_WAR_Avg = mean(WAR_career),
+                                                                         Career_WAR_Min = min(WAR_career),
+                                                                         Career_WAR_Max = max(WAR_career),
+                                                                         Total_50_WAR_players = sum(WAR_50_greater),
+                                                                         Total_60_WAR_players = sum(WAR_60_greater),
+                                                                         Total_20_WAR_players = sum(WAR_20_less)) %>% 
+  filter(Year >= 1904)
+# Convert to long format with tidyr for plotting
+career_metrics_by_year_long <- career_metrics_by_year %>% gather(key = "key", value = "value", -Year)
 ```
 
+```{r}
+# Visualize using ggplot
+ggplot(career_metrics_by_year_long %>% filter(key %in% c("Career_WAR_Avg", "Career_WAR_Min", "Career_WAR_Max")), 
+       aes(x = Year, y=value, col=key)) + geom_line() + theme_light()
+```
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+```{r}
+ggplot(career_metrics_by_year_long %>% filter(key %in% c("Total_60_WAR_players", "Total_20_WAR_players"), Year >= 1990), 
+       aes(x = Year, y=value, col=key)) + geom_line() + theme_light() + labs(y = "# Players out of Top 20 WAR Leaders")
+```
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
-
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
